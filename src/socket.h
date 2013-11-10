@@ -60,7 +60,7 @@ namespace httpserver {
 
     class TcpServer {
         public:
-            TcpServer(short port = 8000, unsigned int queuelen = 5, bool nonblock = true);
+            TcpServer(uint16_t port = 8000, unsigned int queuelen = 5, bool nonblock = true);
 
             ~TcpServer();
 

@@ -28,7 +28,7 @@
 namespace httpserver {
     class HttpServer {
         public:
-            HttpServer(int argc, char **argv, IOLoop& loop);
+            HttpServer(uint16_t port, int queuelen, IOLoop& loop);
             ~HttpServer();
             HttpServer(const HttpServer&) = delete;
             HttpServer& operator=(const HttpServer&) = delete;
@@ -44,7 +44,7 @@ namespace httpserver {
             };
 
             std::unordered_map<std::string, __regex_handler> handlers;
-            TcpServer server;
+            TcpServer *server;
 
             IOLoop& loop;
     };

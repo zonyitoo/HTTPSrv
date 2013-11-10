@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include "socket.h"
+#include <unistd.h>
 
 namespace httpserver {
 
@@ -64,16 +65,22 @@ SocketClient::SocketClient(SocketClient&& rhs)
 int SocketClient::Send(const char *buf, int len) throw (SocketError) {
     int ret = send(cfd, buf, len, 0);
 
-    if (ret <= 0) {
+    if (ret < 0) {
         throw SocketError(errno, strerror(errno));
+    }
+    else if (ret == 0) {
+        throw SocketError(EREMOTEIO, "remote client closed");
     }
     return ret;
 }
 
 int SocketClient::Recv(char *buf, int len) throw (SocketError) {
     int ret = recv(cfd, buf, len, 0);
-    if (ret <= 0) {
+    if (ret < 0) {
         throw SocketError(errno, strerror(errno));
+    }
+    else if (ret == 0) {
+        throw SocketError(EREMOTEIO, "remote client closed");
     }
     return ret;
 }
@@ -87,14 +94,20 @@ uint16_t SocketClient::Port() const {
 }
 
 void SocketClient::Close() {
-    shutdown(cfd, SHUT_RDWR);
+    if (shutdown(cfd, SHUT_RDWR) < 0) {
+        perror("shutdown");
+    }
+    
+    if (close(cfd) < 0) {
+        perror("close");
+    }
 }
 
 int SocketClient::Fd() const {
     return cfd;
 }
 
-TcpServer::TcpServer(short port, unsigned int queuelen, bool nonblock)
+TcpServer::TcpServer(uint16_t port, unsigned int queuelen, bool nonblock)
     : is_nonblock(nonblock) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -146,7 +159,13 @@ SocketClient TcpServer::Accept() throw (SocketError) {
 
 
 void TcpServer::Close() {
-    shutdown(sfd, SHUT_RDWR);
+    if (shutdown(sfd, SHUT_RDWR) < 0) {
+        perror("shutdown");
+    }
+
+    if (close(sfd) < 0) {
+        perror("close");
+    }
 }
 
 int TcpServer::Fd() const {

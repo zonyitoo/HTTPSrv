@@ -53,7 +53,7 @@ Usage
         
         EPollIOLoop ioloop;
 
-        HttpServer server(argc, argc, ioloop);
+        HttpServer server(argc, argv, ioloop);
         server.register_handler("/", new HelloWorldHandler());
         server.register_handler("/([^/]*)/", new HelloWorldHandler());
 

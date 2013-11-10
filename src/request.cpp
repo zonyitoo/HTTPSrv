@@ -18,6 +18,7 @@
 
 #include <sstream>
 #include <cstring>
+#include <iostream>
 #include "request.h"
 
 namespace httpserver {

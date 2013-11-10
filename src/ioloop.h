@@ -24,6 +24,12 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <thread>
+#include <mutex>
+#include <queue>
+#include <vector>
+#include <atomic>
+#include <condition_variable>
 
 namespace httpserver {
 
@@ -35,7 +41,7 @@ namespace httpserver {
 
     class IOLoop {
         public:
-            IOLoop();
+            IOLoop(int argc, char **argv);
             virtual ~IOLoop();
 
             enum EventType {
@@ -53,35 +59,45 @@ namespace httpserver {
 
             typedef std::function<void (int, int, void *, IOLoop&)> EventCallback;
 
-            virtual void add_handler(int fd, int event, const EventCallback& callback, void *arg = nullptr) throw (IOLoopException) = 0;
+            virtual void add_handler(int fd, int event, const EventCallback& callback, void *arg = nullptr) throw (IOLoopException);
             virtual void update_handler(int fd, int event) throw (IOLoopException) = 0;
-            virtual void remove_handler(int fd) throw (IOLoopException) = 0;
+            virtual void remove_handler(int fd) throw (IOLoopException);
 
-            virtual int start() = 0;
-            virtual void stop() = 0;
+            virtual int start() throw (IOLoopException);
+            virtual void stop() throw (IOLoopException);
 
         protected:
-            void register_callback(int fd, EventCallback callback, void *arg = nullptr);
             void toggle_callback(int fd, int type);
-            void remove_callback(int fd);
 
             struct IOEvent {
                 int fd;
                 EventCallback callback;
                 void *arg;
+                std::shared_ptr<std::mutex> mutex_ptr;
 
                 IOEvent();
                 IOEvent(int, EventCallback, void *);
             };
 
+            struct ActiveEvent {
+                int fd;
+                int type;
+            };
+
         private:
             std::unordered_map<int, IOEvent> handlers;
+            std::vector<std::thread> threads;
+            std::queue<ActiveEvent> event_queue;
+            std::mutex queue_mutex;
+            std::condition_variable queue_cond;
+            int threadnum;
+            std::atomic<bool> started;
     };
 
 
     class EPollIOLoop : public IOLoop {
         public:
-            EPollIOLoop();
+            EPollIOLoop(int argc, char **arg);
             virtual ~EPollIOLoop();
 
             virtual void add_handler(int fd, int event, const EventCallback& callback, void *arg = nullptr) throw (IOLoopException);

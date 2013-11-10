@@ -33,13 +33,17 @@ class HelloWorldHandler : public HttpHandler {
             resp.body[resp.body.size() - 1] = ']';
             resp.body += "}";
         }
+
+        void post_handler(const HttpRequest& req, HttpResponse& resp, const std::vector<std::string>& args) {
+            resp.body = req.raw_body;
+        }
 };
 
 int main(int argc, char **argv) {
 
-    EPollIOLoop ioloop;
+    EPollIOLoop ioloop(argc, argv);
 
-    HttpServer server(argc, argv, ioloop);
+    HttpServer server(8000, 200, ioloop);
     server.register_handler("/", new HelloWorldHandler());
     server.register_handler("/([^/]*)/", new HelloWorldHandler());
 

@@ -18,22 +18,31 @@
 
 #include <iostream>
 #include <iterator>
+#include <getopt.h>
+#include <cstring>
+#include <unistd.h>
 #include "server.h"
 #include "except.h"
 
 namespace httpserver {
-    HttpServer::HttpServer(int argc, char **argv, IOLoop& loop)
+    HttpServer::HttpServer(uint16_t port, int queuelen, IOLoop& loop)
         : loop(loop) {
         
-        // TODO: parse argument and fork
-        
-        loop.add_handler(server.Fd(), IOLoop::EV_READ, 
-                [this] (int fd, int type, void *arg, IOLoop& loop) { this->__accept_handler(fd, type, arg, loop); }, &server);
+        static struct option _options_[] = {
+                {"port", optional_argument, nullptr, 'p'},
+                {nullptr, 0, nullptr, '\0'}
+            };
+
+        server = new TcpServer(port, queuelen);
+
+        loop.add_handler(server->Fd(), IOLoop::EV_READ, 
+                [this] (int fd, int type, void *arg, IOLoop& loop) { this->__accept_handler(fd, type, arg, loop); }, server);
+       
     }
 
     HttpServer::~HttpServer() {
-        loop.remove_handler(server.Fd());
-        server.Close();
+        loop.remove_handler(server->Fd());
+        delete server;
     }
 
     void HttpServer::register_handler(const std::string& urlpattern, HttpHandler *handler) {

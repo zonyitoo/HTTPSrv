@@ -161,7 +161,7 @@ ERROR_OCCUR:
     size_t IOStream::__read_to_buffer(SocketClient *client) throw (IOStreamException) {
         size_t readsize = 0;
         while (true) {
-            int n;
+            int n = 0;
             try {
                 n = client->Recv(_recv_buf, _recv_buf_size);
                 readsize += n;
@@ -170,7 +170,6 @@ ERROR_OCCUR:
             catch (SocketError& except) {
                 if (except.code() == EAGAIN || except.code() == EWOULDBLOCK) break;
                 else {
-                    std::cerr << "Socket recv error: " << except.what() << std::endl;
                     throw IOStreamException(except.what());
                 }
             }
@@ -253,8 +252,8 @@ SUNDAY_SEARCH_EXIT:
     void IOStream::close() {
         if (_closed) return;
 
-        _client.Close();
         ioloop.remove_handler(_client.Fd());
+        _client.Close();
 
         _closed = true;
         if (_close_callback)
