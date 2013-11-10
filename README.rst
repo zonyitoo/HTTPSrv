@@ -51,9 +51,9 @@ Usage
 
     int main(int argc, char **argv) {
         
-        EPollIOLoop ioloop;
+        EPollIOLoop ioloop(argc, argv);
 
-        HttpServer server(argc, argv, ioloop);
+        HttpServer server(800, 5, ioloop);
         server.register_handler("/", new HelloWorldHandler());
         server.register_handler("/([^/]*)/", new HelloWorldHandler());
 
