@@ -37,14 +37,14 @@ namespace httpserver {
 
     IOLoop::~IOLoop() {}
 
-    void IOLoop::register_callback(int fd, EventCallback callback) {
-        handlers[fd] = callback;
+    void IOLoop::register_callback(int fd, EventCallback callback, void *arg) {
+        handlers[fd] = IOEvent(fd, callback, arg);
     }
 
     void IOLoop::toggle_callback(int fd, int type) {
         auto iter = handlers.find(fd);
-        if (iter != handlers.end())
-            iter->second(fd, type, *this);
+        if (iter != handlers.end()) 
+            iter->second.callback(fd, type, iter->second.arg, *this);
     }
 
     void IOLoop::remove_callback(int fd) {
@@ -52,6 +52,11 @@ namespace httpserver {
         if (iter != handlers.end())
             handlers.erase(iter);
     }
+
+    IOLoop::IOEvent::IOEvent() {}
+
+    IOLoop::IOEvent::IOEvent(int fd, EventCallback cb, void *arg)
+        : fd(fd), callback(cb), arg(arg) {}
 
     EPollIOLoop::EPollIOLoop() {
         if ((epoll_fd = epoll_create(EPOLL_MAX_EVENT)) < 0) {
@@ -79,14 +84,14 @@ namespace httpserver {
         close(wake_pipe[1]);
     }
     
-    void EPollIOLoop::add_handler(int fd, int type, const EventCallback& callback) throw (IOLoopException) {
+    void EPollIOLoop::add_handler(int fd, int type, const EventCallback& callback, void *arg) throw (IOLoopException) {
         struct epoll_event epev;
         memset(&epev, 0, sizeof(epev));
 
-        if (type & EV_READ) epev.events |= EPOLLIN | EPOLLET;
+        if (type & EV_READ) epev.events |= EPOLLIN;
         if (type & EV_WRITE) epev.events |= EPOLLOUT;
 
-        epev.events |= (EPOLLERR | EPOLLHUP | EPOLLRDHUP);
+        epev.events |= (EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLET);
 
         epev.data.fd = fd;
         
@@ -95,17 +100,17 @@ namespace httpserver {
             throw IOLoopException("EPoll add error");
         }
 
-        register_callback(fd, callback);
+        register_callback(fd, callback, arg);
     }
 
     void EPollIOLoop::update_handler(int fd, int type) throw (IOLoopException) {
         struct epoll_event epev;
         memset(&epev, 0, sizeof(epev));
 
-        if (type & EV_READ) epev.events |= EPOLLIN | EPOLLET;
+        if (type & EV_READ) epev.events |= EPOLLIN;
         if (type & EV_WRITE) epev.events |= EPOLLOUT;
 
-        epev.events |= (EPOLLERR | EPOLLHUP | EPOLLRDHUP);
+        epev.events |= (EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLET);
 
         epev.data.fd = fd;
 
@@ -124,7 +129,7 @@ namespace httpserver {
         remove_callback(fd);
     }
 
-    void EPollIOLoop::start() throw (IOLoopException) {
+    int EPollIOLoop::start() throw (IOLoopException) {
         int n;
         while ((n = epoll_wait(epoll_fd, events.data(), events.max_size(), -1)) >= 0) {
             for (int i = 0; i < n; ++ i) {
@@ -138,17 +143,20 @@ namespace httpserver {
 
                 if (events[i].events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) type |= EV_ERROR;
 
-                std::clog << __FILE__ << ":" << __LINE__ << " Got event ";
-                std::clog << "READ: " << bool(type & EV_READ) << " ";
-                std::clog << "WRITE: " << bool(type & EV_WRITE) << " ";
-                std::clog << "ERROR: " << bool(type & EV_ERROR) << std::endl;
-
-                toggle_callback(events[i].data.fd, type);
+                try {
+                    toggle_callback(events[i].data.fd, type);
+                }
+                catch (std::exception& except) {
+                    std::cerr << __FILE__ << ":" << __LINE__ << except.what() << std::endl;
+                    goto FAILED;
+                }
             }
         }
 
 FINISHED:
-        return;
+        return EXIT_SUCCESS;
+FAILED:
+        return EXIT_FAILURE;
     }
 
     void EPollIOLoop::stop() throw (IOLoopException) {

@@ -1,0 +1,8 @@
+env = Environment()
+env["CXX"] = "clang++";
+env.Library('srv', 
+    ['except.cpp', 'connection.cpp', 'handler.cpp',
+     'ioloop.cpp', 'request.cpp', 'response.cpp',
+     'server.cpp', 'socket.cpp', 'stream.cpp'],
+     CCFLAGS=['-std=c++11','-g', '-stdlib=libc++'])
+#     CCFLAGS=['-std=c++11', '-g'])

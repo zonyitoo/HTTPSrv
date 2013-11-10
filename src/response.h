@@ -15,9 +15,20 @@
  *
  * =====================================================================================
  */
+#pragma once
+
+#include <string>
+#include <map>
+#include "except.h"
 
 namespace httpserver {
-    class HTTPResponse {
+    struct HttpResponse {
+        unsigned int status_code = 200;
+        std::string response_msg = "OK";
+        std::string version = "HTTP/1.1";
+        std::map<std::string, std::string> headers;
+        std::string body; 
 
+        std::string make_package();
     };
 }

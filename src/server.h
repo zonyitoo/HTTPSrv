@@ -15,21 +15,38 @@
  *
  * =====================================================================================
  */
+#pragma once
 
+#include <regex>
+#include <string>
+#include <unordered_map>
+#include "handler.h"
+#include "socket.h"
+#include "ioloop.h"
+#include "connection.h"
 
 namespace httpserver {
-    class HTTPServer {
+    class HttpServer {
         public:
-            HTTPServer(int argc, char **argv);
-            ~HTTPServer();
-            HTTPServer(const HTTPServer&) = delete;
-            HTTPServer& operator=(const HTTPServer&) = delete;
+            HttpServer(int argc, char **argv, IOLoop& loop);
+            ~HttpServer();
+            HttpServer(const HttpServer&) = delete;
+            HttpServer& operator=(const HttpServer&) = delete;
 
-            void registerHandler(const std::string& pattern, 
-                    HTTPRequest::HTTPMethod methods,
-                    const std::function<void (const HTTPRequest&, HTTPResponse& resp)>&);
+            void register_handler(const std::string& urlpattern, HttpHandler *handler);
 
-            int run();
+        private:
+            void __accept_handler(int, int, void *, IOLoop&);
+
+            struct __regex_handler {
+                std::regex regex;
+                HttpHandler *handler;
+            };
+
+            std::unordered_map<std::string, __regex_handler> handlers;
+            TcpServer server;
+
+            IOLoop& loop;
     };
 }
 

@@ -15,107 +15,94 @@
  *
  * =====================================================================================
  */
-#include "connection.h"
-#include <memory>
-#include <cstring>
-#include <cstdio>
-#include <cstdlib>
-#include <fcntl.h>
+
+#include <functional>
 #include <iostream>
+#include "connection.h"
+#include "except.h"
 
 namespace httpserver {
+    
+    HttpConnection::HttpConnection(const SocketClient& client, IOLoop& loop, const HttpConnectionHandler& handler) 
+        : _stream(client, loop), handler(handler), _closed(false) {
 
-TcpClient::TcpClient(int cfd, const struct sockaddr_in& addr)
-    : cfd(cfd), addr(addr) {
+        _stream.set_close_callback([this] (IOStream *) { this->close(); });
 
-    int opts;
-    if ((opts = fcntl(cfd, F_GETFL)) < 0) {
-        perror("fcntl");
-        exit(EXIT_FAILURE);
+        _stream.read_until("\r\n\r\n", [this] (const std::string& data, IOStream& stream) {
+                __stream_handler_get_header(data, stream); });
     }
 
-    opts = (opts | O_NONBLOCK);
-    if (fcntl(cfd, F_SETFL, opts) < 0) {
-        perror("fcntl");
-        exit(EXIT_FAILURE);
-    }
-}
-
-TcpClient::~TcpClient() {}
-
-TcpClient::TcpClient(const TcpClient& rhs) 
-    : cfd(rhs.cfd), addr(rhs.addr) {}
-
-TcpClient::TcpClient(TcpClient&& rhs) 
-    : cfd(rhs.cfd), addr(rhs.addr) {}
-
-int TcpClient::Send(const char *buf, int len) {
-    return send(cfd, buf, len, 0);
-}
-
-int TcpClient::Recv(char *buf, int len) {
-    return recv(cfd, buf, len, 0);
-}
-
-
-char *TcpClient::IPAddress() const {
-    return inet_ntoa(addr.sin_addr);
-}
-
-void TcpClient::Close() {
-    shutdown(cfd, SHUT_RDWR);
-}
-
-int TcpClient::fd() const {
-    return cfd;
-}
-
-TcpServer::TcpServer(short port, unsigned int queuelen) {
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(port);
-
-    if ((sfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("socket");
-        std::abort();
+    HttpConnection::~HttpConnection() {
+        this->close();
     }
 
-    int opt = 1;
-    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("bind");
-        std::abort();
+    void HttpConnection::__stream_handler_get_header(const std::string& data, IOStream& stream) noexcept {
+        long len;
+        request.remote.ip = stream.client().IPAddress();
+        request.remote.port = stream.client().Port();
+        try {
+            request.parse_headers(data); 
+        }
+        catch (HttpRequest::ParseException& except) {
+
+            std::clog << __FILE__ << ":" << __LINE__ << " ";
+            std::clog << except.what() << std::endl;
+
+            goto restart;
+        }
+
+        len = strtol(request.headers["Content-Length"].c_str(), nullptr, 10);
+        stream.read_bytes(len, [this] (const std::string& data, IOStream& stream) {
+                __stream_handler_get_body(data, stream); });
+        return;
+restart:
+        stream.read_until("\r\n\r\n", [this] (const std::string& data, IOStream& stream) {
+                __stream_handler_get_header(data, stream); });
     }
 
-    listen(sfd, queuelen);
-}
+    void HttpConnection::__stream_handler_get_body(const std::string& data, IOStream& stream) noexcept {
+        HttpResponse response;
 
-TcpServer::~TcpServer() {
-    this->Close();
-}
+        try {
+            this->request.parse_body(data);
 
-int TcpServer::Accept() {
-    int cfd;
-    struct sockaddr_in remoteaddr;
-    socklen_t sin_size = sizeof(struct sockaddr_in);
-    if ((cfd = accept(sfd, (struct sockaddr *)&remoteaddr, &sin_size)) < 0) {
-        perror("accept");
-        std::abort();
+            this->handler(request, response);
+
+            std::clog << "[" << request.remote.ip << ":" << request.remote.port << "] ";
+            std::clog << request.method << " " << request.uri << " ";
+            std::clog << response.status_code << " " << response.response_msg << std::endl;
+            std::string resp = response.make_package();
+            stream.write_bytes(resp.c_str(), resp.length());
+        }
+        catch (HttpError& error) {
+            std::clog << "[" << request.remote.ip << ":" << request.remote.port << "] ";
+            std::clog << request.method << " " << request.uri << " ";
+            std::string resp = error.make_package();
+            std::clog << error.status_code() << " " << error.msg() << std::endl;
+            stream.write_bytes(resp.c_str(), resp.length());
+        }
+        catch (HttpRequest::ParseException& except) {
+
+            std::clog << __FILE__ << ":" << __LINE__ << " ";
+            std::clog << except.what() << std::endl;
+
+        }
+
+        stream.read_until("\r\n\r\n", [this] (const std::string& data, IOStream& stream) {
+                __stream_handler_get_header(data, stream); });
     }
 
-    std::clog << "Accepted connection from " << inet_ntoa(remoteaddr.sin_addr) << std::endl;
+    void HttpConnection::close() {
+        if (_closed) return;
+        _stream.close();
+        _closed = true;
 
-    return cfd;
-}
+        if (_close_callback)
+            _close_callback(this);
+    }
 
-
-void TcpServer::Close() {
-    shutdown(sfd, SHUT_RDWR);
-}
-
-int TcpServer::Fd() const {
-    return sfd;
-}
+    void HttpConnection::set_close_callback(const std::function<void (HttpConnection *)>& cb) {
+        _close_callback = cb;
+    }
 
 }

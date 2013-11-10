@@ -26,6 +26,7 @@
 #include <thread>
 #include <mutex>
 #include "ioloop.h"
+#include "socket.h"
 
 namespace httpserver {
 
@@ -37,29 +38,33 @@ namespace httpserver {
 
     class IOStream {
         public:
-            IOStream(int fd, IOLoop& ioloop);
+            IOStream(const SocketClient& client, IOLoop& ioloop);
             ~IOStream();
 
-            typedef std::function<void (const std::string& data)> DataHandler;
+            typedef std::function<void (const std::string& data, IOStream& stream)> DataHandler;
 
             void read_bytes(size_t len, const DataHandler& handler);
             void read_until(const char *until, const DataHandler& handler);
 
             void write_bytes(const void *buffer, size_t len);
 
+            SocketClient client() const;
+            void set_close_callback(const std::function<void (IOStream *)>&);
             void close();
         private:
-            void __handler_poll(int fd, int type, IOLoop& loop);
-            size_t __read_to_buffer() throw (IOStreamException);
+            void __handler_poll(int fd, int type, void *arg, IOLoop& loop);
+            size_t __read_to_buffer(SocketClient *client) throw (IOStreamException);
             bool __read_from_buffer();
 
-            int fd;
+            SocketClient _client;
             IOLoop& ioloop;
             bool _doing;
             bool _write_buf_freezing;
             int _read_num;
             const char *_read_until;
             DataHandler _read_handler;
+
+            std::function<void (IOStream *)> _close_callback;
 
             int _send_buf_size;
             int _recv_buf_size;
@@ -70,6 +75,8 @@ namespace httpserver {
 
             std::mutex _rdmutex;
             std::mutex _wrmutex;
+
+            bool _closed;
     };
 }
 

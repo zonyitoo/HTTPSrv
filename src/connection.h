@@ -16,17 +16,34 @@
  * =====================================================================================
  */
 
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <memory>
+#pragma once
+
+#include <functional>
+#include "socket.h"
+#include "request.h"
+#include "response.h"
+#include "stream.h"
 
 namespace httpserver {
-    class TcpConnection {
-        static int create(short port = 80, size_t queuelen = 5);
+    class HttpConnection {
+        public:
+            typedef std::function<void (const HttpRequest&, HttpResponse&)> HttpConnectionHandler;
 
-        static int accept(int fd);
+            HttpConnection(const SocketClient& client, IOLoop& loop, const HttpConnectionHandler& handler);
+            ~HttpConnection();
+
+            void set_close_callback(const std::function<void (HttpConnection *)>&);
+            void close();
+
+        private:
+            void __stream_handler_get_header(const std::string&, IOStream&) noexcept;
+            void __stream_handler_get_body(const std::string&, IOStream&) noexcept;
+
+            IOStream _stream;
+            HttpConnectionHandler handler;
+            HttpRequest request;
+
+            std::function<void (HttpConnection *)> _close_callback;
+            bool _closed;
     };
 }
-

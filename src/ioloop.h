@@ -51,22 +51,31 @@ namespace httpserver {
                 EV_DELETED = 0x0008
             };
 
-            typedef std::function<void (int, int, IOLoop&)> EventCallback;
+            typedef std::function<void (int, int, void *, IOLoop&)> EventCallback;
 
-            virtual void add_handler(int fd, int event, const EventCallback& callback) throw (IOLoopException) = 0;
+            virtual void add_handler(int fd, int event, const EventCallback& callback, void *arg = nullptr) throw (IOLoopException) = 0;
             virtual void update_handler(int fd, int event) throw (IOLoopException) = 0;
             virtual void remove_handler(int fd) throw (IOLoopException) = 0;
 
-            virtual void start() = 0;
+            virtual int start() = 0;
             virtual void stop() = 0;
 
         protected:
-            void register_callback(int fd, EventCallback callback);
+            void register_callback(int fd, EventCallback callback, void *arg = nullptr);
             void toggle_callback(int fd, int type);
             void remove_callback(int fd);
 
+            struct IOEvent {
+                int fd;
+                EventCallback callback;
+                void *arg;
+
+                IOEvent();
+                IOEvent(int, EventCallback, void *);
+            };
+
         private:
-            std::unordered_map<int, EventCallback> handlers;
+            std::unordered_map<int, IOEvent> handlers;
     };
 
 
@@ -75,11 +84,11 @@ namespace httpserver {
             EPollIOLoop();
             virtual ~EPollIOLoop();
 
-            virtual void add_handler(int fd, int event, const EventCallback& callback) throw (IOLoopException);
+            virtual void add_handler(int fd, int event, const EventCallback& callback, void *arg = nullptr) throw (IOLoopException);
             virtual void update_handler(int fd, int event) throw (IOLoopException);
             virtual void remove_handler(int fd) throw (IOLoopException);
 
-            virtual void start() throw (IOLoopException);
+            virtual int start() throw (IOLoopException);
             virtual void stop() throw (IOLoopException);
         private:
             int epoll_fd;
