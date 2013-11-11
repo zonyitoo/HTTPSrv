@@ -22,6 +22,7 @@
 #include <map>
 #include <vector>
 #include <stdexcept>
+#include "headerstr.h"
 
 namespace httpserver {
     struct Remote {
@@ -33,7 +34,7 @@ namespace httpserver {
         std::string version = "HTTP/1.1";
         std::string method = "GET";
         std::string uri = "/";
-        std::map<std::string, std::string> headers;
+        HeaderMap headers;
         std::string raw_body;
         Remote remote;
 

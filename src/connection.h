@@ -38,6 +38,7 @@ namespace httpserver {
         private:
             void __stream_handler_get_header(const std::string&, IOStream&) noexcept;
             void __stream_handler_get_body(const std::string&, IOStream&) noexcept;
+            void __stream_handler_on_write(IOStream&) noexcept;
 
             IOStream _stream;
             HttpConnectionHandler handler;
@@ -45,5 +46,6 @@ namespace httpserver {
 
             std::function<void (HttpConnection *)> _close_callback;
             bool _closed;
+            bool _close_after_finished;
     };
 }

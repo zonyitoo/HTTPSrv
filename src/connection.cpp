@@ -20,11 +20,12 @@
 #include <iostream>
 #include "connection.h"
 #include "except.h"
+#include <ctime>
 
 namespace httpserver {
     
     HttpConnection::HttpConnection(const SocketClient& client, IOLoop& loop, const HttpConnectionHandler& handler) 
-        : _stream(client, loop), handler(handler), _closed(false) {
+        : _stream(client, loop), handler(handler), _closed(false), _close_after_finished(false) {
 
         _stream.set_close_callback([this] (IOStream *) { this->close(); });
 
@@ -38,8 +39,8 @@ namespace httpserver {
 
     void HttpConnection::__stream_handler_get_header(const std::string& data, IOStream& stream) noexcept {
         long len;
-        request.remote.ip = stream.client().IPAddress();
-        request.remote.port = stream.client().Port();
+        request.remote.ip = stream.client().ip_address();
+        request.remote.port = stream.client().port();
         try {
             request.parse_headers(data); 
         }
@@ -56,26 +57,43 @@ namespace httpserver {
                 __stream_handler_get_body(data, stream); });
         return;
 restart:
-        stream.read_until("\r\n\r\n", [this] (const std::string& data, IOStream& stream) {
-                __stream_handler_get_header(data, stream); });
+        if (!_close_after_finished) 
+            stream.read_until("\r\n\r\n", [this] (const std::string& data, IOStream& stream) {
+                    __stream_handler_get_header(data, stream); });
     }
 
     void HttpConnection::__stream_handler_get_body(const std::string& data, IOStream& stream) noexcept {
         HttpResponse response;
+        char timebuf[32] = {0};
+        time_t rawtime;
+        struct tm *timeinfo;
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        strftime(timebuf, sizeof(timebuf), "%FT%TZ%z", timeinfo);
 
         try {
             this->request.parse_body(data);
 
             this->handler(request, response);
 
-            std::clog << "[" << request.remote.ip << ":" << request.remote.port << "] ";
+            try {
+                if (ci_equal(request.headers["Connection"], "Close")) {
+                    _close_after_finished = true;
+                }
+            }
+            catch (std::out_of_range& except) {}
+
+            if (response.close)
+                _close_after_finished = true;
+            
+            std::clog << "[" << timebuf << "] " << request.remote.ip << ":" << request.remote.port << " ";
             std::clog << request.method << " " << request.uri << " ";
             std::clog << response.status_code << " " << response.response_msg << std::endl;
             std::string resp = response.make_package();
-            stream.write_bytes(resp.c_str(), resp.length());
+            stream.write_bytes(resp.c_str(), resp.length(), [this] (IOStream& stream) { this->__stream_handler_on_write(stream); });
         }
         catch (HttpError& error) {
-            std::clog << "[" << request.remote.ip << ":" << request.remote.port << "] ";
+            std::clog << "[" << timebuf << "] " << request.remote.ip << ":" << request.remote.port << " ";
             std::clog << request.method << " " << request.uri << " ";
             std::string resp = error.make_package();
             std::clog << error.status_code() << " " << error.msg() << std::endl;
@@ -88,14 +106,15 @@ restart:
 
         }
 
-        stream.read_until("\r\n\r\n", [this] (const std::string& data, IOStream& stream) {
-                __stream_handler_get_header(data, stream); });
+        if (!_close_after_finished)
+            stream.read_until("\r\n\r\n", [this] (const std::string& data, IOStream& stream) {
+                    __stream_handler_get_header(data, stream); });
     }
 
     void HttpConnection::close() {
         if (_closed) return;
-        _stream.close();
         _closed = true;
+        _stream.close();
 
         if (_close_callback)
             _close_callback(this);
@@ -103,6 +122,11 @@ restart:
 
     void HttpConnection::set_close_callback(const std::function<void (HttpConnection *)>& cb) {
         _close_callback = cb;
+    }
+
+    void HttpConnection::__stream_handler_on_write(IOStream& stream) noexcept {
+        if (_close_after_finished)
+            this->close();
     }
 
 }

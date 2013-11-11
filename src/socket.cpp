@@ -26,14 +26,18 @@
 
 namespace httpserver {
 
-SocketError::SocketError(int code, const std::string& msg)
-    : std::runtime_error(msg), _code(code) {}
+SocketError::SocketError(int fd, int code, const std::string& msg)
+    : std::runtime_error(msg), _fd(fd), _code(code) {}
 
-SocketError::SocketError(int code, const char *msg)
-    : std::runtime_error(msg), _code(code) {}
+SocketError::SocketError(int fd, int code, const char *msg)
+    : std::runtime_error(msg), _fd(fd), _code(code) {}
 
 int SocketError::code() const {
     return _code;
+}
+
+int SocketError::fd() const {
+    return _fd;
 }
 
 SocketClient::SocketClient(int cfd, const struct sockaddr_in& addr, bool nonblock)
@@ -62,49 +66,53 @@ SocketClient::SocketClient(const SocketClient& rhs)
 SocketClient::SocketClient(SocketClient&& rhs) 
     : cfd(rhs.cfd), addr(rhs.addr) {}
 
-int SocketClient::Send(const char *buf, int len) throw (SocketError) {
-    int ret = send(cfd, buf, len, 0);
+int SocketClient::send(const char *buf, int len) throw (SocketError) {
+    int ret = ::send(cfd, buf, len, 0);
 
-    if (ret < 0) {
-        throw SocketError(errno, strerror(errno));
+    if (ret <= 0) {
+        throw SocketError(cfd, errno, strerror(errno));
     }
     else if (ret == 0) {
-        throw SocketError(EREMOTEIO, "remote client closed");
+        throw SocketError(cfd, EREMOTEIO, "remote client closed");
     }
     return ret;
 }
 
-int SocketClient::Recv(char *buf, int len) throw (SocketError) {
-    int ret = recv(cfd, buf, len, 0);
-    if (ret < 0) {
-        throw SocketError(errno, strerror(errno));
+int SocketClient::recv(char *buf, int len) throw (SocketError) {
+    int ret = ::recv(cfd, buf, len, 0);
+    if (ret <= 0) {
+        throw SocketError(cfd, errno, strerror(errno));
     }
     else if (ret == 0) {
-        throw SocketError(EREMOTEIO, "remote client closed");
+        throw SocketError(cfd, EREMOTEIO, "remote client closed");
     }
     return ret;
 }
 
-const char *SocketClient::IPAddress() const {
+const char *SocketClient::ip_address() const {
     return inet_ntoa(addr.sin_addr);
 }
 
-uint16_t SocketClient::Port() const {
+uint16_t SocketClient::port() const {
     return ntohs(addr.sin_port);
 }
 
-void SocketClient::Close() {
-    if (shutdown(cfd, SHUT_RDWR) < 0) {
-        perror("shutdown");
-    }
-    
-    if (close(cfd) < 0) {
+void SocketClient::close() {
+    if (::close(cfd) < 0) {
+        std::cerr << cfd << " ";
         perror("close");
     }
 }
 
-int SocketClient::Fd() const {
+int SocketClient::fd() const {
     return cfd;
+}
+
+void SocketClient::shutdown(int how) {
+    if (::shutdown(cfd, how) < 0) {
+        std::cerr << cfd << " ";
+        perror("shutdown");
+    }
 }
 
 TcpServer::TcpServer(uint16_t port, unsigned int queuelen, bool nonblock)
@@ -143,33 +151,35 @@ TcpServer::TcpServer(uint16_t port, unsigned int queuelen, bool nonblock)
 }
 
 TcpServer::~TcpServer() {
-    this->Close();
+    this->close();
 }
 
-SocketClient TcpServer::Accept() throw (SocketError) {
+SocketClient TcpServer::accept() throw (SocketError) {
     int cfd;
     struct sockaddr_in remoteaddr;
     socklen_t sin_size = sizeof(struct sockaddr_in);
-    if ((cfd = accept(sfd, (struct sockaddr *)&remoteaddr, &sin_size)) < 0) {
-        throw SocketError(errno, strerror(errno));
+    if ((cfd = ::accept(sfd, (struct sockaddr *)&remoteaddr, &sin_size)) < 0) {
+        throw SocketError(sfd, errno, strerror(errno));
     }
 
     return SocketClient(cfd, remoteaddr, is_nonblock);
 }
 
 
-void TcpServer::Close() {
-    if (shutdown(sfd, SHUT_RDWR) < 0) {
-        perror("shutdown");
-    }
-
-    if (close(sfd) < 0) {
+void TcpServer::close() {
+    if (::close(sfd) < 0) {
         perror("close");
     }
 }
 
-int TcpServer::Fd() const {
+int TcpServer::fd() const {
     return sfd;
+}
+
+void TcpServer::shutdown(int how) {
+    if (::shutdown(sfd, how) < 0) {
+        perror("shutdown");
+    }
 }
 
 }

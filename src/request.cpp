@@ -36,17 +36,13 @@ namespace httpserver {
         std::string line;
         getline(stream, line);
 
-        std::map<std::string, std::string>::iterator header_iter;
+        HeaderMap::iterator header_iter;
         std::string::size_type str_size;
 
         // Request line
         char *pnt = strtok(const_cast<char *>(line.c_str()), " ");
         if (!pnt) goto ERROR;
         this->method = pnt;
-        for (char& c : this->method) {
-            c = toupper(c);
-        }
-
         pnt = strtok(nullptr, " ");
         if (!pnt) goto ERROR;
         this->uri = pnt;

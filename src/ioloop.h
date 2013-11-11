@@ -24,12 +24,12 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
-#include <thread>
-#include <mutex>
-#include <queue>
-#include <vector>
-#include <atomic>
-#include <condition_variable>
+//#include <thread>
+//#include <mutex>
+//#include <queue>
+//#include <vector>
+//#include <atomic>
+//#include <condition_variable>
 
 namespace httpserver {
 
@@ -73,25 +73,28 @@ namespace httpserver {
                 int fd;
                 EventCallback callback;
                 void *arg;
-                std::shared_ptr<std::mutex> mutex_ptr;
+                //std::shared_ptr<std::mutex> mutex_ptr;
 
                 IOEvent();
                 IOEvent(int, EventCallback, void *);
             };
 
+            /*  
             struct ActiveEvent {
                 int fd;
                 int type;
             };
+            */
 
         private:
             std::unordered_map<int, IOEvent> handlers;
-            std::vector<std::thread> threads;
-            std::queue<ActiveEvent> event_queue;
-            std::mutex queue_mutex;
-            std::condition_variable queue_cond;
-            int threadnum;
-            std::atomic<bool> started;
+            //std::vector<std::thread> threads;
+            //std::queue<ActiveEvent> event_queue;
+            //std::mutex queue_mutex;
+            //std::condition_variable queue_cond;
+            //int threadnum;
+            //std::atomic<bool> started;
+            bool started;
     };
 
 

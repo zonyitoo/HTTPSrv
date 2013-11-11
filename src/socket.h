@@ -28,11 +28,13 @@
 namespace httpserver {
     class SocketError : public std::runtime_error {
         public:
-            explicit SocketError(int code, const std::string& msg);
-            explicit SocketError(int code, const char *msg);
+            explicit SocketError(int fd, int code, const std::string& msg);
+            explicit SocketError(int fd, int code, const char *msg);
             int code() const;
+            int fd() const;
         private:
             int _code;
+            int _fd;
     };
 
     class SocketClient {
@@ -44,15 +46,16 @@ namespace httpserver {
             SocketClient(const SocketClient& rhs);
             SocketClient(SocketClient&& rhs);
 
-            int Send(const char *buf, int len) throw (SocketError);
+            int send(const char *buf, int len) throw (SocketError);
 
-            int Recv(char *buf, int len) throw (SocketError);
+            int recv(char *buf, int len) throw (SocketError);
 
-            const char *IPAddress() const;
-            int Fd() const;
-            uint16_t Port() const;
+            const char *ip_address() const;
+            int fd() const;
+            uint16_t port() const;
 
-            void Close();
+            void close();
+            void shutdown(int how = SHUT_RD);
         private:
             int cfd;
             struct sockaddr_in addr;
@@ -66,11 +69,12 @@ namespace httpserver {
 
             TcpServer(const TcpServer&) = delete;
             TcpServer& operator=(const TcpServer&) = delete;
-            int Fd() const;
+            int fd() const;
 
-            SocketClient Accept() throw (SocketError);
+            SocketClient accept() throw (SocketError);
 
-            void Close();
+            void close();
+            void shutdown(int how = SHUT_RD);
         private:
             int sfd;
             struct sockaddr_in addr;

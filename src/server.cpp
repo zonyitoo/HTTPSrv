@@ -35,13 +35,12 @@ namespace httpserver {
 
         server = new TcpServer(port, queuelen);
 
-        loop.add_handler(server->Fd(), IOLoop::EV_READ, 
+        loop.add_handler(server->fd(), IOLoop::EV_READ, 
                 [this] (int fd, int type, void *arg, IOLoop& loop) { this->__accept_handler(fd, type, arg, loop); }, server);
        
     }
 
     HttpServer::~HttpServer() {
-        loop.remove_handler(server->Fd());
         delete server;
     }
 
@@ -63,10 +62,7 @@ namespace httpserver {
         TcpServer *server = static_cast<TcpServer *>(arg);
         while (true) {
             try {
-                SocketClient client = server->Accept();
-                std::clog << "Accepted connection from " << client.IPAddress() << std::endl;
-
-                HttpConnection *conn = new HttpConnection(client, loop, [this] (const HttpRequest& req, HttpResponse& resp) {
+                HttpConnection *conn = new HttpConnection(server->accept(), loop, [this] (const HttpRequest& req, HttpResponse& resp) {
                     std::smatch m;
                     std::vector<std::string> urlargs;
                     for (auto& h_iter : handlers) {
@@ -118,7 +114,9 @@ namespace httpserver {
                     break;
                 }
                 else {
-                    throw;
+                    loop.remove_handler(server->fd());
+                    server->shutdown(SHUT_RDWR);
+                    server->close();
                 }
             }
         }

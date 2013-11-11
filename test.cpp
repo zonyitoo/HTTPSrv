@@ -14,6 +14,7 @@ class HelloWorldHandler : public HttpHandler {
     public:
         void get_handler(const HttpRequest& req, HttpResponse& resp, const std::vector<std::string>& args) {
             resp.headers["Content-Type"] = "application/json";
+            resp.headers["Server"] = "YTWS/1.0";
 
             resp.body = "{";
             for (auto& itr : req.params) {

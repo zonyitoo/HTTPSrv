@@ -41,12 +41,13 @@ namespace httpserver {
             IOStream(const SocketClient& client, IOLoop& ioloop);
             ~IOStream();
 
-            typedef std::function<void (const std::string& data, IOStream& stream)> DataHandler;
+            typedef std::function<void (const std::string& data, IOStream& stream)> ReadHandler;
+            typedef std::function<void (IOStream& stream)> WriteHandler;
 
-            void read_bytes(size_t len, const DataHandler& handler);
-            void read_until(const char *until, const DataHandler& handler);
+            void read_bytes(size_t len, const ReadHandler& handler = ReadHandler());
+            void read_until(const char *until, const ReadHandler& handler = ReadHandler());
 
-            void write_bytes(const void *buffer, size_t len);
+            void write_bytes(const void *buffer, size_t len, const WriteHandler& handler = WriteHandler());
 
             SocketClient client() const;
             void set_close_callback(const std::function<void (IOStream *)>&);
@@ -62,7 +63,8 @@ namespace httpserver {
             bool _write_buf_freezing;
             int _read_num;
             const char *_read_until;
-            DataHandler _read_handler;
+            ReadHandler _read_handler;
+            WriteHandler _write_handler;
 
             std::function<void (IOStream *)> _close_callback;
 

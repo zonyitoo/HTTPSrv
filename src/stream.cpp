@@ -38,15 +38,15 @@ namespace httpserver {
         : _client(client), ioloop(loop), _doing(false), _write_buf_freezing(false),
           _read_num(-1), _read_until(nullptr), _closed(false) {
 
-        ioloop.add_handler(_client.Fd(), IOLoop::EV_READ | IOLoop::EV_WRITE,
+        ioloop.add_handler(_client.fd(), IOLoop::EV_READ | IOLoop::EV_WRITE, 
                 [this] (int fd, int type, void *arg, IOLoop& loop) { __handler_poll(fd, type, arg, loop); }, &_client);
 
         unsigned int _sz = sizeof(_send_buf_size);
-        if (getsockopt(_client.Fd(), SOL_SOCKET, SO_SNDBUF, &_send_buf_size, &_sz)) {
+        if (getsockopt(_client.fd(), SOL_SOCKET, SO_SNDBUF, &_send_buf_size, &_sz)) {
             perror("getsockopt");
             std::abort();
         }
-        if (getsockopt(_client.Fd(), SOL_SOCKET, SO_RCVBUF, &_recv_buf_size, &_sz)) {
+        if (getsockopt(_client.fd(), SOL_SOCKET, SO_RCVBUF, &_recv_buf_size, &_sz)) {
             perror("getsockopt");
             std::abort();
         }
@@ -56,7 +56,7 @@ namespace httpserver {
     }
 
     IOStream::~IOStream() {
-        close();
+        if (!_closed) close();
         delete [] _send_buf;
         delete [] _recv_buf;
     }
@@ -65,8 +65,8 @@ namespace httpserver {
         return _client;
     }
 
-    void IOStream::read_bytes(size_t len, const DataHandler& handler) {
-        if (len == 0) {
+    void IOStream::read_bytes(size_t len, const ReadHandler& handler) {
+        if (len == 0 || _closed) {
             handler("", *this);
             return;
         }
@@ -76,12 +76,18 @@ namespace httpserver {
         while (true) {
             //std::lock_guard<std::mutex> lck(this->_rdmutex);
             if (this->__read_from_buffer()) break;
-            if (this->__read_to_buffer(&_client) == 0) break;
+            try {
+                if (this->__read_to_buffer(&_client) == 0) break;
+            }
+            catch (const IOStreamException& except) {
+                this->close();
+                break;
+            }
         }
     }
 
-    void IOStream::read_until(const char *until, const DataHandler& handler) {
-        if (!until) return;
+    void IOStream::read_until(const char *until, const ReadHandler& handler) {
+        if (!until || _closed) return;
 
         _read_until = until;
         _read_handler = handler;
@@ -89,18 +95,26 @@ namespace httpserver {
         while (true) {
             //std::lock_guard<std::mutex> lck(this->_rdmutex);
             if (this->__read_from_buffer()) break;
-            if (this->__read_to_buffer(&_client) == 0) break;
+            try {
+                if (this->__read_to_buffer(&_client) == 0) break;
+            }
+            catch (const IOStreamException& except) {
+                this->close();
+                break;
+            }
         }
     }
 
-    void IOStream::write_bytes(const void *buffer, size_t len) {
-        if (!buffer || len == 0) return;
+    void IOStream::write_bytes(const void *buffer, size_t len, const WriteHandler& handler) {
+        if (!buffer || len == 0 || _closed) return;
 
         const char *_buf = static_cast<const char *>(buffer);
         //std::lock_guard<std::mutex> lck(this->_rdmutex);
         std::copy(_buf, _buf + len, back_inserter(_wrbuf));
 
-        ioloop.update_handler(_client.Fd(), IOLoop::EV_READ | IOLoop::EV_WRITE);
+        ioloop.update_handler(_client.fd(), IOLoop::EV_READ | IOLoop::EV_WRITE);
+
+        _write_handler = handler;
     }
 
     void IOStream::__handler_poll(int fd, int type, void *arg, IOLoop& loop) {
@@ -113,8 +127,7 @@ namespace httpserver {
                 result = this->__read_to_buffer(clientSocket);
             }
             catch (const IOStreamException& except) {
-                this->close();
-                return;
+                goto ERROR_OCCUR;
             }
 
             if (result != 0) {
@@ -136,7 +149,7 @@ namespace httpserver {
                     while (_wrbuf_iter != _end_iter) _send_buf[index ++] = *(_wrbuf_iter ++);
 
                     try {
-                        total = clientSocket->Send(_send_buf, total);
+                        total = clientSocket->send(_send_buf, total);
                     }
                     catch (SocketError& except) {
                         if (except.code() == EAGAIN || except.code() == EWOULDBLOCK) {
@@ -151,7 +164,17 @@ namespace httpserver {
                     while (total --) _wrbuf.pop_front();
 
                 }
+
+                if (_write_handler) {
+                    auto h = _write_handler;
+                    _write_handler = WriteHandler();
+                    h(*this);
+                }
             }
+        }
+
+        if (type & IOLoop::EV_ERROR) {
+            goto ERROR_OCCUR;
         }
         return;
 ERROR_OCCUR:
@@ -163,13 +186,14 @@ ERROR_OCCUR:
         while (true) {
             int n = 0;
             try {
-                n = client->Recv(_recv_buf, _recv_buf_size);
+                n = client->recv(_recv_buf, _recv_buf_size);
                 readsize += n;
-                copy(_recv_buf, _recv_buf + n, back_inserter(_rdbuf));
+                std::copy(_recv_buf, _recv_buf + n, back_inserter(_rdbuf));
             }
             catch (SocketError& except) {
                 if (except.code() == EAGAIN || except.code() == EWOULDBLOCK) break;
                 else {
+                    std::cerr << __FILE__ << ":" << __LINE__ << " " << except.fd() << " " << except.what() << std::endl;
                     throw IOStreamException(except.what());
                 }
             }
@@ -190,11 +214,16 @@ ERROR_OCCUR:
                 }
                 _doing = false;
                 _read_num = -1;
-                if (_read_handler) _read_handler(data, *this); 
+                if (_read_handler) {
+                    auto h = _read_handler;
+                    _read_handler = ReadHandler();
+                    h(data, *this); 
+                }
                 return true;
             }
         }
         else if (_read_until) {
+            // SUNDAY FIND
             size_t _until_str_len = strlen(_read_until);
             int char_step[256] = {0};
             for (size_t i = 0; i < 256; ++ i)
@@ -238,7 +267,11 @@ ERROR_OCCUR:
 
                     _doing = false;
                     _read_until = nullptr;
-                    if (_read_handler) _read_handler(data, *this);
+                    if (_read_handler) {
+                        auto h = _read_handler;
+                        _read_handler = ReadHandler();
+                        h(data, *this); 
+                    }
                     return true;
                 }
             }
@@ -251,11 +284,12 @@ SUNDAY_SEARCH_EXIT:
 
     void IOStream::close() {
         if (_closed) return;
-
-        ioloop.remove_handler(_client.Fd());
-        _client.Close();
-
         _closed = true;
+
+        ioloop.remove_handler(_client.fd());
+        _client.shutdown(SHUT_RDWR);
+        _client.close();
+
         if (_close_callback)
             _close_callback(this);
     }

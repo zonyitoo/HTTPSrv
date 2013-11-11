@@ -20,14 +20,16 @@
 #include <string>
 #include <map>
 #include "except.h"
+#include "headerstr.h"
 
 namespace httpserver {
     struct HttpResponse {
         unsigned int status_code = 200;
         std::string response_msg = "OK";
         std::string version = "HTTP/1.1";
-        std::map<std::string, std::string> headers;
+        HeaderMap headers;
         std::string body; 
+        bool close = false;
 
         std::string make_package();
     };
